@@ -7,5 +7,6 @@ public interface MqttService {
 
     void getSubscribe() throws MqttException;
 
-    void implementQueryProcedure(String mqttMessage, String camNumber);
+    void implementQueryProcedure(String mqttMessage, int camNumber);
+    void publushResultProcedure(int camNumber, String eventType, String grz);
 }
