@@ -1,5 +1,13 @@
 {
-"clientId": "null",
-"hostName": "null",
-"port": 0
+  "mqttClientId" : "Validation",
+  "mqttClientIp" : "194.87.237.67",
+  "mqttClientPort" : 1883,
+  "databaseLogin" : "SYSDBA",
+  "databasePassword" : "temp",
+  "databasePath" : "C:\\\\ttt\\\\111.GDB",
+  "databaseIp" : "zet-buharov",
+  "databasePort" : 3050,
+  "cameraIdDeviceIdDictionary" : {
+    "1" : 365
+  }
 }

@@ -5,15 +5,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-import javax.sql.DataSource;
-
 @Component
-public class MqttServiceImpl  {
+public class ValidationServiceImpl {
 
-    private final static Logger log = LoggerFactory.getLogger(MqttServiceImpl.class);
+    private final static Logger log = LoggerFactory.getLogger(ValidationServiceImpl.class);
     final MqttService mqttService;
 
-    public MqttServiceImpl(MqttService mqttService) {
+    public ValidationServiceImpl(MqttService mqttService) {
         this.mqttService = mqttService;
     }
 
@@ -21,4 +19,5 @@ public class MqttServiceImpl  {
         mqttService.getConnection();
         mqttService.getSubscribe();
     }
+
 }

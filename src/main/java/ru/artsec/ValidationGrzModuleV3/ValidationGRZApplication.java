@@ -6,7 +6,7 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ApplicationContext;
-import ru.artsec.ValidationGrzModuleV3.service.MqttServiceImpl;
+import ru.artsec.ValidationGrzModuleV3.service.ValidationServiceImpl;
 
 @SpringBootApplication
 public class ValidationGRZApplication implements CommandLineRunner {
@@ -28,8 +28,8 @@ public class ValidationGRZApplication implements CommandLineRunner {
     @Override
     public void run(String... args) {
         try {
-            MqttServiceImpl mqttServiceImpl = applicationContext.getBean("mqttServiceImpl", MqttServiceImpl.class);
-            mqttServiceImpl.getConnectionMqttClient();
+            ValidationServiceImpl validationServiceImpl = applicationContext.getBean("validationServiceImpl", ValidationServiceImpl.class);
+            validationServiceImpl.getConnectionMqttClient();
         } catch (Exception ex) {
             log.error("Ошибка: " + ex.getMessage());
         }

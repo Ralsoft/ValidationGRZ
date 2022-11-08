@@ -1,13 +1,14 @@
 package ru.artsec.ValidationGrzModuleV3.mqtt;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectWriter;
 import org.eclipse.paho.client.mqttv3.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
-import ru.artsec.ValidationGrzModuleV3.EventTypeList.EventType;
 import ru.artsec.ValidationGrzModuleV3.model.Door;
-import ru.artsec.ValidationGrzModuleV3.model.MQTTClientModel;
+import ru.artsec.ValidationGrzModuleV3.model.ConfigurationModel;
 import ru.artsec.ValidationGrzModuleV3.model.Message;
 import ru.artsec.ValidationGrzModuleV3.model.Monitor;
 import ru.artsec.ValidationGrzModuleV3.service.MqttService;
@@ -30,12 +31,12 @@ public class BaseMqttClient implements MqttService {
     EntityManager em;
     static IMqttClient iMqttClient = null;
     MqttConnectOptions options;
-    final Validates validates;
+    private final Validates validates;
     File mqttConfig;
-    MQTTClientModel mqttClientModel;
+    ConfigurationModel configurationModel;
     ObjectMapper mapper = new ObjectMapper();
 
-    public BaseMqttClient(Validates validates) {
+    public BaseMqttClient(@Qualifier("connectionDatabase") Validates validates) {
         this.validates = validates;
     }
 
@@ -44,11 +45,11 @@ public class BaseMqttClient implements MqttService {
         try {
             mqttConfig = new File("ValidatedConfig.json");
             isNewFile(mqttConfig);
-            mqttClientModel = mapper.readValue(mqttConfig, MQTTClientModel.class);
+            configurationModel = mapper.readValue(mqttConfig, ConfigurationModel.class);
 
-            log.info("Попытка подключения клиента. ID = " + mqttClientModel.getClientId() + " URL = " + mqttClientModel.getHostName() + ":" + mqttClientModel.getPort());
+            log.info("Попытка подключения клиента. ID = " + configurationModel.getMqttClientId() + " URL = " + configurationModel.getMqttClientIp() + ":" + configurationModel.getMqttClientPort());
 
-            iMqttClient = new MqttClient("tcp://" + mqttClientModel.getHostName() + ":" + mqttClientModel.getPort(), mqttClientModel.getClientId());
+            iMqttClient = new MqttClient("tcp://" + configurationModel.getMqttClientIp() + ":" + configurationModel.getMqttClientPort(), MqttClient.generateClientId());
 
             options = new MqttConnectOptions();
             options.setAutomaticReconnect(true);
@@ -56,20 +57,26 @@ public class BaseMqttClient implements MqttService {
             options.setConnectionTimeout(5000);
             iMqttClient.connect(options);
 
-            log.info("Успешное поключение клиента - " + mqttClientModel.getClientId());
+            log.info("Успешное поключение клиента - " + configurationModel.getMqttClientId());
         } catch (Exception e) {
             log.error("Ошибка: " + e.getMessage());
         }
     }
 
-    void isNewFile(File file) {
+    public void isNewFile(File file) {
         try {
             if (file.createNewFile()) {
-                log.info("Файл " + file.getName() + " успешно создан по пути: " + file.getPath());
 
                 FileOutputStream out = new FileOutputStream(file);
-                out.write(new MQTTClientModel().toString().getBytes());
+
+                ObjectWriter ow = new ObjectMapper().writer().withDefaultPrettyPrinter();
+                String json = ow.writeValueAsString(new ConfigurationModel());
+
+                out.write(json.getBytes());
                 out.close();
+
+                log.info("Файл конфигурации успешно создан. Запустите программу заново.  ПУТЬ: " + file.getAbsolutePath());
+                System.exit(0);
             }
         } catch (IOException e) {
             log.error("Ошибка: " + e.getMessage());
@@ -88,7 +95,7 @@ public class BaseMqttClient implements MqttService {
                     Map map = mapper.readValue(message.toString(), Map.class);
 
                     String grz = map.get("grz").toString();
-                    int camNumber = (int) map.get("camNumber");
+                    int camNumber = Integer.parseInt(map.get("camNumber").toString());
 
                     implementQueryProcedure(grz, camNumber);
                 } catch (Exception ex) {
@@ -110,13 +117,15 @@ public class BaseMqttClient implements MqttService {
 
             log.info("Выполнение процедуры...");
 
+            var idDev = configurationModel.getCameraIdDeviceIdDictionary().get(camNumber);
             StoredProcedureQuery storedProcedureQuery = em.createNamedStoredProcedureQuery("validatepass").
-                    setParameter("ID_DEV", 279).
+                    setParameter("ID_DEV", idDev).
                     setParameter("ID_CARD", validGRZ).
                     setParameter("GRZ", validGRZ);
             var eventType = (String) storedProcedureQuery.getOutputParameterValue("EVENT_TYPE");
             var idPep = (String) storedProcedureQuery.getOutputParameterValue("ID_PEP");
 
+            log.info("Получен ID камеры: " + configurationModel.getCameraIdDeviceIdDictionary().get(camNumber));
             log.info("Получены аргументы: EVENT_TYPE = " + eventType + " ID_PEP = " + idPep);
 
             publushResultProcedure(camNumber, eventType, grz);
@@ -128,7 +137,6 @@ public class BaseMqttClient implements MqttService {
     @Override
     public void publushResultProcedure(int camNumber, String eventType, String grz) {
         try {
-            EventType event = new EventType();
 
             ObjectMapper mapper = new ObjectMapper();
             Monitor monitor = new Monitor();
@@ -136,45 +144,40 @@ public class BaseMqttClient implements MqttService {
             Door door = new Door(camNumber);
 
             monitor.setCamNumber(camNumber);
-            monitor.setMessages(Arrays.asList(new Message((byte) 0x00, (byte) 0x00, (byte) 0x01, grz), new Message((byte) 0x09, (byte) 0x00, (byte) 0x02, eventType)));
+            monitor.setMessages(Arrays.asList(new Message((byte) 0x00, (byte) 0x00, (byte) 0x02, grz), new Message((byte) 0x09, (byte) 0x00, (byte) 0x02, eventType)));
 
             String jsonMonitor = mapper.writeValueAsString(monitor);
             String jsonDoor = mapper.writeValueAsString(door);
 
             MqttMessage mqttMessageEventMonitor = new MqttMessage(jsonMonitor.getBytes(StandardCharsets.UTF_8));
             MqttMessage mqttMessageEventDoor = new MqttMessage(jsonDoor.getBytes(StandardCharsets.UTF_8));
-            //MqttMessage mqttEventType = new MqttMessage(eventType.getBytes());
+            MqttMessage mqttEventType = new MqttMessage(eventType.getBytes());
             MqttMessage mqttGRZ = new MqttMessage(grz.getBytes());
 
-            iMqttClient.publish("Parking/MonitorDoor/Monitor/View/", mqttMessageEventMonitor);
+            iMqttClient.publish("Parking/MonitorDoor/Monitor/View", mqttMessageEventMonitor);
             switch (eventType) {
                 case "46", "65" -> {
                     iMqttClient.publish("Parking/Validation/Result/NotAcceptGRZ", mqttGRZ);
-                    defaultValuePublish(eventType, event);
+                    iMqttClient.publish("Parking/Validation/Result/EventType", mqttEventType);
+
                 }
                 case "50" -> {
                     iMqttClient.publish("Parking/Validation/Result/AcceptGRZ", mqttGRZ);
-                    iMqttClient.publish("Parking/MonitorDoor/Door/Open/0/", mqttMessageEventDoor);
-                    defaultValuePublish(eventType, event);
+                    iMqttClient.publish("Parking/MonitorDoor/Door/Open", mqttMessageEventDoor);
+                    iMqttClient.publish("Parking/Validation/Result/EventType", mqttEventType);
+
                     log.info("Сообщение: \"" + mqttGRZ + "\" успешно отправлено. Parking/Validation/Result/AcceptGRZ");
-                    log.info("Сообщение: \"" + mqttMessageEventDoor + "\" успешно отправлено. На топик Parking/MonitorDoor/Door/Open/0");
+                    log.info("Сообщение: \"" + mqttMessageEventDoor + "\" успешно отправлено. На топик Parking/MonitorDoor/Door/Open");
                 }
                 default -> {
                     log.warn("Неизвестный EVENT_TYPE = " + eventType);
                 }
             }
 
-            log.info("Сообщение: \"" + mqttMessageEventMonitor + "\" успешно отправлено. На топик Parking/MonitorDoor/Monitor/View/");
-            // log.info("Сообщение: \"" + mqttEventType + "\" успешно отправлено. На топик Parking/ResultEventType/");
+            log.info("Сообщение: \"" + mqttMessageEventMonitor + "\" успешно отправлено. На топик Parking/MonitorDoor/Monitor/View");
+             log.info("Сообщение: \"" + mqttEventType + "\" успешно отправлено. На топик Parking/ResultEventType/");
         } catch (Exception ex) {
             log.error("Ошибка: " + ex.getMessage());
         }
-    }
-
-    private static void defaultValuePublish(String eventType, EventType event) throws MqttException {
-        iMqttClient.publish("Parking/Validation/Result/EventType/" + eventType, event.resultEvent(eventType));
-
-        log.info("Сообщение: \"" + event.resultEvent(eventType) + "\" успешно отправлено. Parking/Validation/Result/EventType/" + eventType);
-
     }
 }
