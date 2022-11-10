@@ -43,7 +43,7 @@ public class BaseMqttClient implements MqttService {
     @Override
     public void getConnection() {
         try {
-            mqttConfig = new File("ValidatedConfig.json");
+            mqttConfig = new File("ValidatedConfig1.json");
             isNewFile(mqttConfig);
             configurationModel = mapper.readValue(mqttConfig, ConfigurationModel.class);
 

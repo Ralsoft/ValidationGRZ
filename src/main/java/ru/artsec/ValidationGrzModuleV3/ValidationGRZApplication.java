@@ -6,14 +6,18 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ApplicationContext;
+import ru.artsec.ValidationGrzModuleV3.database.ConnectionDatabase;
 import ru.artsec.ValidationGrzModuleV3.service.ValidationServiceImpl;
+
+import java.io.IOException;
+import java.sql.SQLException;
 
 @SpringBootApplication
 public class ValidationGRZApplication implements CommandLineRunner {
 
     private static final Logger log = LoggerFactory.getLogger(ValidationGRZApplication.class);
 
-    final ApplicationContext applicationContext;
+    ApplicationContext applicationContext;
 
     public ValidationGRZApplication(ApplicationContext applicationContext) {
         this.applicationContext = applicationContext;

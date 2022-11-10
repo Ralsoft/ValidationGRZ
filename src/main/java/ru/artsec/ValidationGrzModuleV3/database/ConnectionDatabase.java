@@ -12,6 +12,10 @@ import ru.artsec.ValidationGrzModuleV3.validate.Validates;
 
 import javax.sql.DataSource;
 import java.io.File;
+import java.io.IOException;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
 
 @Component
 public class ConnectionDatabase implements Validates {
@@ -21,29 +25,46 @@ public class ConnectionDatabase implements Validates {
     BaseMqttClient client = new BaseMqttClient(this);
     ConfigurationModel configurationModel;
     ObjectMapper mapper = new ObjectMapper();
+    DataSource source;
+    int count;
 
     @Bean
-    public DataSource dataSource() {
+    DataSource getConnection() throws IOException {
         try {
             mqttConfig = new File("ValidatedConfig.json");
             client.isNewFile(mqttConfig);
             configurationModel = mapper.readValue(mqttConfig, ConfigurationModel.class);
-
-            log.info("Подключение к базе данных.");
-            return DataSourceBuilder
-                    .create()
+            isConnected();
+            source = DataSourceBuilder.create()
                     .username(configurationModel.getDatabaseLogin())
                     .password(configurationModel.getDatabasePassword())
-                    .url("jdbc:firebirdsql://" +
-                            configurationModel.getDatabaseIp() + ":" +
-                            configurationModel.getDatabasePort() + "/" +
-                            configurationModel.getDatabasePath() +
-                            "?encoding=WIN1251")
+                    .url("jdbc:firebirdsql://"
+                            + configurationModel.getDatabaseIp()
+                            + ":"
+                            + configurationModel.getDatabasePort()
+                            + "/"
+                            + configurationModel.getDatabasePath()
+                            + "?encoding=WIN1251")
                     .build();
-        } catch (Exception ex) {
+            return source;
+        } catch (
+                Exception ex) {
             log.error("Ошибка: " + ex.getMessage());
         }
         return null;
+    }
+
+    void isConnected() throws InterruptedException {
+        log.info("Подключение к базе данных. Попытка: " + ++count);
+        try (Connection ignored = DriverManager.getConnection("jdbc:firebirdsql://" + configurationModel.getDatabaseIp() + ":" + configurationModel.getDatabasePort() + "/" + configurationModel.getDatabasePath() + "?encoding=WIN1251", configurationModel.getDatabaseLogin(), configurationModel.getDatabasePassword())) {
+            if (!ignored.isClosed()) {
+                log.info("Подключение к базе данных произошло успешно.");
+            }
+        } catch (Exception ex) {
+            Thread.sleep(10000);
+            log.error("Ошибка: " + ex.getMessage());
+            isConnected();
+        }
     }
 
     @Override
