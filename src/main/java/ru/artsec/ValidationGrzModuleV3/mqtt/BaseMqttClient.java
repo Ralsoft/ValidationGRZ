@@ -41,13 +41,13 @@ public class BaseMqttClient implements MqttService {
     }
 
     @Override
-    public void getConnection() {
+    public void getConnection() throws InterruptedException {
         try {
-            mqttConfig = new File("ValidatedConfig1.json");
+            mqttConfig = new File("ValidatedConfig.json");
             isNewFile(mqttConfig);
             configurationModel = mapper.readValue(mqttConfig, ConfigurationModel.class);
 
-            log.info("Попытка подключения клиента. ID = " + configurationModel.getMqttClientId() + " URL = " + configurationModel.getMqttClientIp() + ":" + configurationModel.getMqttClientPort());
+            log.info("Попытка подключения клиента. URL = " + configurationModel.getMqttClientIp() + ":" + configurationModel.getMqttClientPort());
 
             iMqttClient = new MqttClient("tcp://" + configurationModel.getMqttClientIp() + ":" + configurationModel.getMqttClientPort(), MqttClient.generateClientId());
 
@@ -59,7 +59,10 @@ public class BaseMqttClient implements MqttService {
 
             log.info("Успешное поключение клиента - " + configurationModel.getMqttClientId());
         } catch (Exception e) {
+            Thread.sleep(5000);
             log.error("Ошибка: " + e.getMessage());
+            if(!iMqttClient.isConnected())
+                getConnection();
         }
     }
 
@@ -153,6 +156,11 @@ public class BaseMqttClient implements MqttService {
             MqttMessage mqttMessageEventDoor = new MqttMessage(jsonDoor.getBytes(StandardCharsets.UTF_8));
             MqttMessage mqttEventType = new MqttMessage(eventType.getBytes());
             MqttMessage mqttGRZ = new MqttMessage(grz.getBytes());
+
+            mqttMessageEventMonitor.setQos(0);
+            mqttMessageEventDoor.setQos(0);
+            mqttEventType.setQos(0);
+            mqttGRZ.setQos(0);
 
             iMqttClient.publish("Parking/MonitorDoor/Monitor/View", mqttMessageEventMonitor);
             switch (eventType) {
