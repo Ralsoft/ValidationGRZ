@@ -2,67 +2,77 @@ package ru.artsec.ValidationGrzModuleV3.mqtt;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
-import org.eclipse.paho.client.mqttv3.*;
+import org.eclipse.paho.client.mqttv3.MqttClient;
+import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
+import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
-import ru.artsec.ValidationGrzModuleV3.model.Door;
+import ru.artsec.ValidationGrzModuleV3.database.ConnectionDatabase;
 import ru.artsec.ValidationGrzModuleV3.model.ConfigurationModel;
+import ru.artsec.ValidationGrzModuleV3.model.Door;
 import ru.artsec.ValidationGrzModuleV3.model.Message;
 import ru.artsec.ValidationGrzModuleV3.model.Monitor;
 import ru.artsec.ValidationGrzModuleV3.service.MqttService;
-import ru.artsec.ValidationGrzModuleV3.validate.Validates;
 
-import javax.persistence.EntityManager;
-import javax.persistence.PersistenceContext;
-import javax.persistence.StoredProcedureQuery;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.sql.CallableStatement;
+import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.Map;
 
 @Component
 public class BaseMqttClient implements MqttService {
     private final static Logger log = LoggerFactory.getLogger(BaseMqttClient.class);
-    @PersistenceContext
-    EntityManager em;
-    static IMqttClient iMqttClient = null;
+    MqttClient mqttClient;
+    //    private final Validates validates;
+//    @PersistenceContext
+//    EntityManager em;
     MqttConnectOptions options;
-    private final Validates validates;
     File mqttConfig;
     ConfigurationModel configurationModel;
     ObjectMapper mapper = new ObjectMapper();
+    ConnectionDatabase connectDatabase = new ConnectionDatabase();
+    String eventType;
+    String idPep;
 
-    public BaseMqttClient(@Qualifier("connectionDatabase") Validates validates) {
-        this.validates = validates;
+    public BaseMqttClient() throws SQLException {
     }
 
+
+//    public BaseMqttClient(@Qualifier("connectionDatabase") Validates validates) throws SQLException {
+//        this.validates = validates;
+//    }
+
     @Override
-    public void getConnection() throws InterruptedException {
+    public void getConnection(String name) throws InterruptedException {
         try {
             mqttConfig = new File("ValidatedConfig.json");
             isNewFile(mqttConfig);
             configurationModel = mapper.readValue(mqttConfig, ConfigurationModel.class);
 
-            log.info("Попытка подключения клиента. URL = " + configurationModel.getMqttClientIp() + ":" + configurationModel.getMqttClientPort());
+            log.info("Попытка подключения клиента. " + ", " +
+                    "URL = " + configurationModel.getMqttClientIp() + ":" + configurationModel.getMqttClientPort() + ", " +
+                    "ЛОГИН: " + configurationModel.getMqttUsername()
+            );
 
-            iMqttClient = new MqttClient("tcp://" + configurationModel.getMqttClientIp() + ":" + configurationModel.getMqttClientPort(), MqttClient.generateClientId());
-
+            mqttClient = new MqttClient("tcp://" + configurationModel.getMqttClientIp() + ":" + configurationModel.getMqttClientPort(), MqttClient.generateClientId());
             options = new MqttConnectOptions();
-            options.setAutomaticReconnect(true);
-            options.setCleanSession(true);
             options.setConnectionTimeout(5000);
-            iMqttClient.connect(options);
+            options.setUserName(configurationModel.getMqttUsername());
+            options.setPassword(configurationModel.getMqttPassword().toCharArray());
+
+            mqttClient.connect(options);
 
             log.info("Успешное поключение клиента - " + configurationModel.getMqttClientId());
         } catch (Exception e) {
             Thread.sleep(5000);
-            log.error("Ошибка: " + e.getMessage());
-            if(!iMqttClient.isConnected())
-                getConnection();
+            log.error("Ошибка: " + e);
+            if (!mqttClient.isConnected())
+                getConnection(name);
         }
     }
 
@@ -90,8 +100,12 @@ public class BaseMqttClient implements MqttService {
     public void getSubscribe() {
         try {
             log.info("Попытка подписки на топик. ТОПИК: Parking/IntegratorCVS");
-            iMqttClient.subscribe("Parking/IntegratorCVS", (topic, message) -> {
+            mqttClient.subscribe("Parking/IntegratorCVS", (topic, message) -> {
                 try {
+
+                    if(connectDatabase.isConnected().isClosed())
+                        connectDatabase.isConnected();
+
                     log.info("Получено сообщение от топика. ТОПИК \"" + topic + "\" СООБЩЕНИЕ: \"" + message + "\"");
 
                     ObjectMapper mapper = new ObjectMapper();
@@ -102,45 +116,37 @@ public class BaseMqttClient implements MqttService {
 
                     implementQueryProcedure(grz, camNumber);
                 } catch (Exception ex) {
-                    log.error("Ошибка: " + ex.getMessage());
+                    log.error("Ошибка: " + ex);
                 }
             });
             log.info("Подписка на топик Parking/IntegratorCVS произошла успешно.");
         } catch (Exception ex) {
-            log.error("Ошибка: " + ex.getMessage());
+            log.error("Ошибка: " + ex);
         }
     }
 
     @Override
-    public void implementQueryProcedure(String grz, int camNumber) {
+    public void implementQueryProcedure(String grz, int camNumber) { // Вызов процедуры validatepass
         try {
-            log.info("Выполняется валидация ГРЗ.");
-
-            String validGRZ = validates.validateGRZ(grz);
+            var idDev = configurationModel.getCameraIdDeviceIdDictionary().get(camNumber);
 
             log.info("Выполнение процедуры...");
+            log.info("Входящие параметры для процедуры: " +
+                    "ID_DEV: " + idDev +
+                    "ID_CARD: " + grz +
+                    " GRZ: " + grz
+            );
 
-            var idDev = configurationModel.getCameraIdDeviceIdDictionary().get(camNumber);
-            StoredProcedureQuery storedProcedureQuery = em.createNamedStoredProcedureQuery("validatepass").
-                    setParameter("ID_DEV", idDev).
-                    setParameter("ID_CARD", validGRZ).
-                    setParameter("GRZ", validGRZ);
-            var eventType = (String) storedProcedureQuery.getOutputParameterValue("EVENT_TYPE");
-            var idPep = (String) storedProcedureQuery.getOutputParameterValue("ID_PEP");
-
-            log.info("Получен ID камеры: " + configurationModel.getCameraIdDeviceIdDictionary().get(camNumber));
-            log.info("Получены аргументы: EVENT_TYPE = " + eventType + " ID_PEP = " + idPep);
-
+            execute(grz, camNumber);
             publushResultProcedure(camNumber, eventType, grz);
         } catch (Exception ex) {
-            log.error("Ошибка: " + ex.getMessage());
+            log.error("Ошибка: " + ex);
         }
     }
 
     @Override
     public void publushResultProcedure(int camNumber, String eventType, String grz) {
         try {
-
             ObjectMapper mapper = new ObjectMapper();
             Monitor monitor = new Monitor();
 
@@ -157,22 +163,17 @@ public class BaseMqttClient implements MqttService {
             MqttMessage mqttEventType = new MqttMessage(eventType.getBytes());
             MqttMessage mqttGRZ = new MqttMessage(grz.getBytes());
 
-            mqttMessageEventMonitor.setQos(0);
-            mqttMessageEventDoor.setQos(0);
-            mqttEventType.setQos(0);
-            mqttGRZ.setQos(0);
-
-            iMqttClient.publish("Parking/MonitorDoor/Monitor/View", mqttMessageEventMonitor);
+            mqttClient.publish("Parking/MonitorDoor/Monitor/View", mqttMessageEventMonitor);
             switch (eventType) {
                 case "46", "65" -> {
-                    iMqttClient.publish("Parking/Validation/Result/NotAcceptGRZ", mqttGRZ);
-                    iMqttClient.publish("Parking/Validation/Result/EventType", mqttEventType);
+                    mqttClient.publish("Parking/Validation/Result/NotAcceptGRZ", mqttGRZ);
+                    mqttClient.publish("Parking/Validation/Result/EventType", mqttEventType);
 
                 }
                 case "50" -> {
-                    iMqttClient.publish("Parking/Validation/Result/AcceptGRZ", mqttGRZ);
-                    iMqttClient.publish("Parking/MonitorDoor/Door/Open", mqttMessageEventDoor);
-                    iMqttClient.publish("Parking/Validation/Result/EventType", mqttEventType);
+                    mqttClient.publish("Parking/Validation/Result/AcceptGRZ", mqttGRZ);
+                    mqttClient.publish("Parking/MonitorDoor/Door/Open", mqttMessageEventDoor);
+                    mqttClient.publish("Parking/Validation/Result/EventType", mqttEventType);
 
                     log.info("Сообщение: \"" + mqttGRZ + "\" успешно отправлено. Parking/Validation/Result/AcceptGRZ");
                     log.info("Сообщение: \"" + mqttMessageEventDoor + "\" успешно отправлено. На топик Parking/MonitorDoor/Door/Open");
@@ -183,9 +184,33 @@ public class BaseMqttClient implements MqttService {
             }
 
             log.info("Сообщение: \"" + mqttMessageEventMonitor + "\" успешно отправлено. На топик Parking/MonitorDoor/Monitor/View");
-             log.info("Сообщение: \"" + mqttEventType + "\" успешно отправлено. На топик Parking/ResultEventType/");
+            log.info("Сообщение: \"" + mqttEventType + "\" успешно отправлено. На топик Parking/ResultEventType/");
         } catch (Exception ex) {
             log.error("Ошибка: " + ex.getMessage());
+        }
+    }
+
+
+    public void execute(String grz,int camNumber) {
+        try {
+            connectDatabase.isConnected();
+
+            String procedure = "{ call VALIDATEPASS(?,?,?) }";
+            CallableStatement call = connectDatabase.getConnectionDB().prepareCall(procedure);
+
+            call.setInt(1, camNumber);
+            call.setString(2, grz);
+            call.setString(3, grz);
+
+            connectDatabase.getConnectionDB().prepareCall(procedure);
+            call.executeQuery();
+
+            eventType = call.getString(1);
+            idPep = call.getString(2);
+
+            connectDatabase.isConnected().close();
+        } catch (Exception ex) {
+            log.error("Ошибка: " + ex);
         }
     }
 }

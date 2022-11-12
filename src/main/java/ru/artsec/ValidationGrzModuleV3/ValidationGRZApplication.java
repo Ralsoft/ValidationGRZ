@@ -9,7 +9,6 @@ import org.springframework.context.ApplicationContext;
 import ru.artsec.ValidationGrzModuleV3.database.ConnectionDatabase;
 import ru.artsec.ValidationGrzModuleV3.service.ValidationServiceImpl;
 
-import java.io.IOException;
 import java.sql.SQLException;
 
 @SpringBootApplication
@@ -23,7 +22,8 @@ public class ValidationGRZApplication implements CommandLineRunner {
         this.applicationContext = applicationContext;
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws SQLException {
+        ConnectionDatabase connectionDatabase = new ConnectionDatabase();
         log.info("Начало работы программы.");
         SpringApplication.run(ValidationGRZApplication.class, args);
     }

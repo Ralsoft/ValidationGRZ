@@ -1,8 +1,7 @@
 package ru.artsec.ValidationGrzModuleV3.model;
 
-import lombok.*;
+import lombok.Data;
 
-import java.util.ArrayList;
 import java.util.List;
 
 @Data

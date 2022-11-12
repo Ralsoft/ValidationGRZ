@@ -1,5 +1,6 @@
 package ru.artsec.ValidationGrzModuleV3.service;
 
+import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,8 +16,8 @@ public class ValidationServiceImpl {
         this.mqttService = mqttService;
     }
 
-    public void getConnectionMqttClient() throws MqttException {
-        mqttService.getConnection();
+    public void getConnectionMqttClient() throws MqttException, InterruptedException {
+        mqttService.getConnection(MqttClient.generateClientId());
         mqttService.getSubscribe();
     }
 
