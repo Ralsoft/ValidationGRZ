@@ -18,7 +18,7 @@ public class ValidationServiceImpl {
 
     public void getConnectionMqttClient() throws MqttException, InterruptedException {
         mqttService.getConnection(MqttClient.generateClientId());
-        mqttService.getSubscribe();
+
     }
 
 }

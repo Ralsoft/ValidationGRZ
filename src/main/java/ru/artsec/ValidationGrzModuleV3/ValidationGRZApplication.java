@@ -23,7 +23,6 @@ public class ValidationGRZApplication implements CommandLineRunner {
     }
 
     public static void main(String[] args) throws SQLException {
-        ConnectionDatabase connectionDatabase = new ConnectionDatabase();
         log.info("Начало работы программы.");
         SpringApplication.run(ValidationGRZApplication.class, args);
     }

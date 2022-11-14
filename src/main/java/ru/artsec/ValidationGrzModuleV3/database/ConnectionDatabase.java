@@ -12,41 +12,17 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 
-//@Component
 public class ConnectionDatabase implements Validates {
     private final static Logger log = LoggerFactory.getLogger(ConnectionDatabase.class);
 
     File mqttConfig;
-    //    BaseMqttClient client = new BaseMqttClient(this);
     ConfigurationModel configurationModel;
     ObjectMapper mapper = new ObjectMapper();
     DataSource source;
     int count;
-//    HikariDataSource dataSource;
 
     public ConnectionDatabase() throws SQLException {
     }
-
-//    @Bean
-//    public HikariDataSource getConnectionDB() {
-//        try {
-//            dataSource = new HikariDataSource();
-//            mqttConfig = new File("ValidatedConfig.json");
-//            client.isNewFile(mqttConfig);
-//            configurationModel = mapper.readValue(mqttConfig, ConfigurationModel.class);
-//            log.info("Попытка подключения к базе данных. " + "ЛОГИН: " + configurationModel.getDatabaseLogin() + ", " + "ПУТЬ:" + configurationModel.getDatabasePath() + ", " + "IP: " + configurationModel.getDatabaseIp() + ", " + "PORT: " + configurationModel.getDatabasePort());
-//            isConnected();
-//            dataSource.setUsername("SYSDBA");
-//            dataSource.setPassword("masterkey");
-//            dataSource.setJdbcUrl("jdbc:firebirdsql://" + configurationModel.getDatabaseIp() + ":" + configurationModel.getDatabasePort() + "/" + configurationModel.getDatabasePath() + "?encoding=WIN1251&autoReconnect=true");
-//            dataSource.setConnectionTimeout(3000);
-////            dataSource.setMaximumPoolSize(999);
-//            return dataSource;
-//        } catch (Exception ex) {
-//            log.error("Ошибка: " + ex.getMessage());
-//        }
-//        return null;
-//    }
 
     public Connection getConnectionDB() {
         return connectionDB;
@@ -57,9 +33,17 @@ public class ConnectionDatabase implements Validates {
     public Connection isConnected() throws InterruptedException {
 
         log.info("Подключение к базе данных. Попытка: " + ++count);
+
         try {
             mqttConfig = new File("ValidatedConfig.json");
             configurationModel = mapper.readValue(mqttConfig, ConfigurationModel.class);
+            log.info("Информация о подключении к базе данных. " +
+                    "LOGIN: " + configurationModel.getDatabaseLogin() + ", " +
+                    "PASSWORD: " + configurationModel.getDatabasePassword() + ", " +
+                    "IP: " + configurationModel.getDatabaseIp() + ", " +
+                    "PORT: " + configurationModel.getDatabasePort() + ", " +
+                    "ПУТЬ: " + configurationModel.getDatabasePath()
+            );
             connectionDB = DriverManager.getConnection("jdbc:firebirdsql://" + configurationModel.getDatabaseIp() + ":" + configurationModel.getDatabasePort() + "/" + configurationModel.getDatabasePath() + "?encoding=WIN1251&autoReconnect=true", configurationModel.getDatabaseLogin(), configurationModel.getDatabasePassword());
 
             if (!connectionDB.isClosed())

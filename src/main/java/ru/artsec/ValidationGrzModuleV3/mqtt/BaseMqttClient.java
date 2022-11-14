@@ -2,9 +2,7 @@ package ru.artsec.ValidationGrzModuleV3.mqtt;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
-import org.eclipse.paho.client.mqttv3.MqttClient;
-import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
-import org.eclipse.paho.client.mqttv3.MqttMessage;
+import org.eclipse.paho.client.mqttv3.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -28,9 +26,6 @@ import java.util.Map;
 public class BaseMqttClient implements MqttService {
     private final static Logger log = LoggerFactory.getLogger(BaseMqttClient.class);
     MqttClient mqttClient;
-    //    private final Validates validates;
-//    @PersistenceContext
-//    EntityManager em;
     MqttConnectOptions options;
     File mqttConfig;
     ConfigurationModel configurationModel;
@@ -61,18 +56,42 @@ public class BaseMqttClient implements MqttService {
 
             mqttClient = new MqttClient("tcp://" + configurationModel.getMqttClientIp() + ":" + configurationModel.getMqttClientPort(), MqttClient.generateClientId());
             options = new MqttConnectOptions();
-            options.setConnectionTimeout(5000);
+            options.setAutomaticReconnect(true);
             options.setUserName(configurationModel.getMqttUsername());
             options.setPassword(configurationModel.getMqttPassword().toCharArray());
+            mqttClient.setCallback(new MqttCallback() {
+                @Override
+                public void connectionLost(Throwable throwable) {
+                    log.error("Соединение потеряно " + throwable.getMessage());
+                    if (!mqttClient.isConnected()) {
+                        try {
+                            Thread.sleep(5000);
+                            getConnection(name);
+                        } catch (InterruptedException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }
+                }
 
+                @Override
+                public void messageArrived(String s, MqttMessage mqttMessage) throws Exception {
+                    log.info("пришло сообщение " + s);
+                }
+
+                @Override
+                public void deliveryComplete(IMqttDeliveryToken iMqttDeliveryToken) {
+                    log.info("deliveryComplete " + iMqttDeliveryToken.toString());
+                }
+            });
             mqttClient.connect(options);
-
+            getSubscribe();
             log.info("Успешное поключение клиента - " + configurationModel.getMqttClientId());
         } catch (Exception e) {
-            Thread.sleep(5000);
             log.error("Ошибка: " + e);
-            if (!mqttClient.isConnected())
+            if (!mqttClient.isConnected()){
+                Thread.sleep(5000);
                 getConnection(name);
+            }
         }
     }
 
@@ -191,10 +210,8 @@ public class BaseMqttClient implements MqttService {
     }
 
 
-    public void execute(String grz,int camNumber) {
+    public void execute(String grz,int camNumber) throws InterruptedException, SQLException {
         try {
-            connectDatabase.isConnected();
-
             String procedure = "{ call VALIDATEPASS(?,?,?) }";
             CallableStatement call = connectDatabase.getConnectionDB().prepareCall(procedure);
 
@@ -202,15 +219,17 @@ public class BaseMqttClient implements MqttService {
             call.setString(2, grz);
             call.setString(3, grz);
 
-            connectDatabase.getConnectionDB().prepareCall(procedure);
             call.executeQuery();
+
+            call.closeOnCompletion();
 
             eventType = call.getString(1);
             idPep = call.getString(2);
 
-            connectDatabase.isConnected().close();
         } catch (Exception ex) {
             log.error("Ошибка: " + ex);
+        }finally {
+            connectDatabase.isConnected().close();
         }
     }
 }
