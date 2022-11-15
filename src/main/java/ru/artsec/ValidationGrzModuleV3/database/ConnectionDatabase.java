@@ -8,6 +8,7 @@ import ru.artsec.ValidationGrzModuleV3.validate.Validates;
 
 import javax.sql.DataSource;
 import java.io.File;
+import java.io.IOException;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
@@ -15,28 +16,30 @@ import java.sql.SQLException;
 public class ConnectionDatabase implements Validates {
     private final static Logger log = LoggerFactory.getLogger(ConnectionDatabase.class);
 
-    File mqttConfig;
-    ConfigurationModel configurationModel;
     ObjectMapper mapper = new ObjectMapper();
     DataSource source;
     int count;
-
-    public ConnectionDatabase() throws SQLException {
+    File mqttConfig = new File("ValidatedConfig.json");
+    ConfigurationModel configurationModel = mapper.readValue(mqttConfig, ConfigurationModel.class);
+    private Connection connectionDB;
+    public ConnectionDatabase() throws SQLException, IOException {
     }
 
-    public Connection getConnectionDB() {
-        return connectionDB;
-    }
 
-    Connection connectionDB;
-
-    public Connection isConnected() throws InterruptedException {
+    public Connection connected() throws InterruptedException {
 
         log.info("Подключение к базе данных. Попытка: " + ++count);
 
         try {
-            mqttConfig = new File("ValidatedConfig.json");
-            configurationModel = mapper.readValue(mqttConfig, ConfigurationModel.class);
+            if(connectionDB == null)
+            connectionDB =
+                    DriverManager.getConnection(
+                            "jdbc:firebirdsql://" + configurationModel.getDatabaseIp() + ":"
+                                    + configurationModel.getDatabasePort() + "/"
+                                    + configurationModel.getDatabasePath() + "?encoding=WIN1251&autoReconnect=true",
+                            configurationModel.getDatabaseLogin(),
+                            configurationModel.getDatabasePassword());
+
             log.info("Информация о подключении к базе данных. " +
                     "LOGIN: " + configurationModel.getDatabaseLogin() + ", " +
                     "PASSWORD: " + configurationModel.getDatabasePassword() + ", " +
@@ -44,7 +47,6 @@ public class ConnectionDatabase implements Validates {
                     "PORT: " + configurationModel.getDatabasePort() + ", " +
                     "ПУТЬ: " + configurationModel.getDatabasePath()
             );
-            connectionDB = DriverManager.getConnection("jdbc:firebirdsql://" + configurationModel.getDatabaseIp() + ":" + configurationModel.getDatabasePort() + "/" + configurationModel.getDatabasePath() + "?encoding=WIN1251&autoReconnect=true", configurationModel.getDatabaseLogin(), configurationModel.getDatabasePassword());
 
             if (!connectionDB.isClosed())
                 log.info("Подключение к базе данных произошло успешно.");
@@ -52,8 +54,8 @@ public class ConnectionDatabase implements Validates {
             return connectionDB;
         } catch (Exception ex) {
             log.error("Ошибка: " + ex.getMessage());
-            Thread.sleep(10000);
-            isConnected();
+            Thread.sleep(5000);
+            connected();
         }
         return null;
     }

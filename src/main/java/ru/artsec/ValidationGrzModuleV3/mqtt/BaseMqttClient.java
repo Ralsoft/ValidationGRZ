@@ -2,6 +2,7 @@ package ru.artsec.ValidationGrzModuleV3.mqtt;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
+import jdk.jfr.Experimental;
 import org.eclipse.paho.client.mqttv3.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,8 +19,12 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.sql.CallableStatement;
+import java.sql.Connection;
+import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 
 @Component
@@ -34,13 +39,8 @@ public class BaseMqttClient implements MqttService {
     String eventType;
     String idPep;
 
-    public BaseMqttClient() throws SQLException {
+    public BaseMqttClient() throws SQLException, IOException {
     }
-
-
-//    public BaseMqttClient(@Qualifier("connectionDatabase") Validates validates) throws SQLException {
-//        this.validates = validates;
-//    }
 
     @Override
     public void getConnection(String name) throws InterruptedException {
@@ -54,7 +54,9 @@ public class BaseMqttClient implements MqttService {
                     "ЛОГИН: " + configurationModel.getMqttUsername()
             );
 
-            mqttClient = new MqttClient("tcp://" + configurationModel.getMqttClientIp() + ":" + configurationModel.getMqttClientPort(), MqttClient.generateClientId());
+            mqttClient = new MqttClient(
+                    "tcp://" + configurationModel.getMqttClientIp() + ":" +
+                            configurationModel.getMqttClientPort(), name);
             options = new MqttConnectOptions();
             options.setAutomaticReconnect(true);
             options.setUserName(configurationModel.getMqttUsername());
@@ -119,26 +121,24 @@ public class BaseMqttClient implements MqttService {
     public void getSubscribe() {
         try {
             log.info("Попытка подписки на топик. ТОПИК: Parking/IntegratorCVS");
-            mqttClient.subscribe("Parking/IntegratorCVS", (topic, message) -> {
-                try {
-
-                    if(connectDatabase.isConnected().isClosed())
-                        connectDatabase.isConnected();
-
-                    log.info("Получено сообщение от топика. ТОПИК \"" + topic + "\" СООБЩЕНИЕ: \"" + message + "\"");
-
-                    ObjectMapper mapper = new ObjectMapper();
-                    Map map = mapper.readValue(message.toString(), Map.class);
-
-                    String grz = map.get("grz").toString();
-                    int camNumber = Integer.parseInt(map.get("camNumber").toString());
-
-                    implementQueryProcedure(grz, camNumber);
-                } catch (Exception ex) {
-                    log.error("Ошибка: " + ex);
-                }
-            });
+            mqttClient.subscribe("Parking/IntegratorCVS", this::messageHandling);
             log.info("Подписка на топик Parking/IntegratorCVS произошла успешно.");
+        } catch (Exception ex) {
+            log.error("Ошибка: " + ex);
+        }
+    }
+
+    private synchronized void messageHandling(String topic, MqttMessage message) {
+        try{
+            log.info("Получено сообщение от топика. ТОПИК \"" + topic + "\" СООБЩЕНИЕ: \"" + message + "\"");
+
+            ObjectMapper mapper = new ObjectMapper();
+            Map map = mapper.readValue(message.toString(), Map.class);
+
+            String grz = map.get("grz").toString();
+            int camNumber = Integer.parseInt(map.get("camNumber").toString());
+
+            implementQueryProcedure(grz, camNumber);
         } catch (Exception ex) {
             log.error("Ошибка: " + ex);
         }
@@ -157,22 +157,30 @@ public class BaseMqttClient implements MqttService {
             );
 
             execute(grz, camNumber);
-            publushResultProcedure(camNumber, eventType, grz);
+
+            publishResultProcedure(camNumber, eventType, grz);
         } catch (Exception ex) {
             log.error("Ошибка: " + ex);
         }
     }
 
     @Override
-    public void publushResultProcedure(int camNumber, String eventType, String grz) {
+    public void publishResultProcedure(int camNumber, String eventType, String grz) {
         try {
             ObjectMapper mapper = new ObjectMapper();
             Monitor monitor = new Monitor();
 
             Door door = new Door(camNumber);
 
+            //логика соединения сообщений из файла конфигурации
             monitor.setCamNumber(camNumber);
-            monitor.setMessages(Arrays.asList(new Message((byte) 0x00, (byte) 0x00, (byte) 0x02, grz), new Message((byte) 0x09, (byte) 0x00, (byte) 0x02, eventType)));
+            var listMessagesBuffer = new ArrayList<Message>();
+            var listMessages = configurationModel.getStringDictionary().get(eventType);
+
+            listMessagesBuffer.addAll(listMessages);
+            listMessagesBuffer.add(new Message((byte) 0x00, (byte) 0x0, (byte) 0x02, grz));
+
+            monitor.setMessages(listMessagesBuffer);
 
             String jsonMonitor = mapper.writeValueAsString(monitor);
             String jsonDoor = mapper.writeValueAsString(door);
@@ -210,10 +218,14 @@ public class BaseMqttClient implements MqttService {
     }
 
 
-    public void execute(String grz,int camNumber) throws InterruptedException, SQLException {
+    public void execute(String grz,int camNumber) {
         try {
+            Connection connection = connectDatabase.connected();
+
+            log.info("Название подключения к базе данных: " + connection.getMetaData());
+
             String procedure = "{ call VALIDATEPASS(?,?,?) }";
-            CallableStatement call = connectDatabase.getConnectionDB().prepareCall(procedure);
+            CallableStatement call = connection.prepareCall(procedure);
 
             call.setInt(1, camNumber);
             call.setString(2, grz);
@@ -226,10 +238,9 @@ public class BaseMqttClient implements MqttService {
             eventType = call.getString(1);
             idPep = call.getString(2);
 
+            System.out.println(!connection.isClosed());
         } catch (Exception ex) {
             log.error("Ошибка: " + ex);
-        }finally {
-            connectDatabase.isConnected().close();
         }
     }
 }

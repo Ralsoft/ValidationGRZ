@@ -3,6 +3,7 @@ package ru.artsec.ValidationGrzModuleV3.model;
 import lombok.Data;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Data
@@ -23,6 +24,14 @@ public class ConfigurationModel {
     Map<Integer, Integer> cameraIdDeviceIdDictionary = new HashMap<>() {{
         put(1, 365);
     }};
+
+
+    Map<String, List<Message>> stringDictionary = new HashMap<>() {{
+        put("46", List.of(new Message((byte) 0x09, (byte) 0x00, (byte) 0x02, "Неизвестная карточка")));
+        put("50", List.of(new Message((byte) 0x09, (byte) 0x00, (byte) 0x02, "Действительная карточка")));
+        put("65", List.of(new Message((byte) 0x09, (byte) 0x00, (byte) 0x02, "Недействительная карточка")));
+    }};
+
 
     public ConfigurationModel() {
     }

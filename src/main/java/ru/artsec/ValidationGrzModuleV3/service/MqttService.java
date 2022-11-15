@@ -11,5 +11,5 @@ public interface MqttService {
 
     void implementQueryProcedure(String mqttMessage, int camNumber) throws InterruptedException, SQLException;
 
-    void publushResultProcedure(int camNumber, String eventType, String grz);
+    void publishResultProcedure(int camNumber, String eventType, String grz);
 }
