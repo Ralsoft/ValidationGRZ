@@ -7,7 +7,6 @@ import org.eclipse.paho.client.mqttv3.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
-import ru.artsec.ValidationGrzModuleV3.database.ConnectionDatabase;
 import ru.artsec.ValidationGrzModuleV3.model.ConfigurationModel;
 import ru.artsec.ValidationGrzModuleV3.model.Door;
 import ru.artsec.ValidationGrzModuleV3.model.Message;
@@ -35,10 +34,10 @@ public class BaseMqttClient implements MqttService {
     File mqttConfig;
     ConfigurationModel configurationModel;
     ObjectMapper mapper = new ObjectMapper();
-    ConnectionDatabase connectDatabase = new ConnectionDatabase();
+//    ConnectionDatabase connectDatabase = new ConnectionDatabase();
     String eventType;
     String idPep;
-
+    Connection connection;
     public BaseMqttClient() throws SQLException, IOException {
     }
 
@@ -55,7 +54,6 @@ public class BaseMqttClient implements MqttService {
                     ", USERNAME = " + configurationModel.getMqttUsername() +
                     ", PASSWORD = " + configurationModel.getMqttPassword()
                     );
-
             mqttClient = new MqttClient(
                     "tcp://" + configurationModel.getMqttClientIp() + ":" +
                     configurationModel.getMqttClientPort(),
@@ -69,36 +67,36 @@ public class BaseMqttClient implements MqttService {
                     "Выставленные настройки MQTT: " +
                     "Автоматический реконнект = " + options.isAutomaticReconnect()
                     );
-            mqttClient.setCallback(new MqttCallback() {
-                @Override
-                public void connectionLost(Throwable throwable) {
-                    log.error("Ошибка: " + throwable.getMessage());
-                    if (!mqttClient.isConnected()) {
-                        try {
-                            log.info("Переподключение... 60 сек");
-                            Thread.sleep(60000);
-                            getConnection();
-                        } catch (InterruptedException e) {
-                            throw new RuntimeException(e);
-                        }
-                    }
-                }
-
-                @Override
-                public void messageArrived(String s, MqttMessage mqttMessage) throws Exception {
-                    log.info("Получено сообщение: " + s);
-                }
-
-                @Override
-                public void deliveryComplete(IMqttDeliveryToken iMqttDeliveryToken) {
-//                    log.info("deliveryComplete " + iMqttDeliveryToken.toString());
-                }
-            });
+//            mqttClient.setCallback(new MqttCallback() {
+//                @Override
+//                public void connectionLost(Throwable throwable) {
+//                    log.error("Ошибка: " + throwable.getMessage());
+//                    if (!mqttClient.isConnected()) {
+//                        try {
+//                            log.info("Переподключение... 10 сек");
+//                            Thread.sleep(10000);
+//                            getConnection();
+//                        } catch (InterruptedException e) {
+//                            log.error("getConnection Ошибка: " + e);
+//                        }
+//                    }
+//                }
+//
+//                @Override
+//                public void messageArrived(String s, MqttMessage mqttMessage) throws Exception {
+//                    log.info("Получено сообщение: " + s);
+//                }
+//
+//                @Override
+//                public void deliveryComplete(IMqttDeliveryToken iMqttDeliveryToken) {
+////                    log.info("deliveryComplete " + iMqttDeliveryToken.toString());
+//                }
+//            });
             mqttClient.connect(options);
             getSubscribe();
             log.info("Успешное поключение клиента - " + mqttClient.getServerURI());
         } catch (Exception e) {
-            log.error("Ошибка: " + e);
+            log.error("getConnection Ошибка: " + e);
             if (!mqttClient.isConnected()){
                 log.info("Переподключение... 5 сек");
                 Thread.sleep(5000);
@@ -123,7 +121,7 @@ public class BaseMqttClient implements MqttService {
                 System.exit(0);
             }
         } catch (IOException e) {
-            log.error("Ошибка: " + e);
+            log.error("isNewFile Ошибка: " + e);
         }
     }
 
@@ -134,7 +132,7 @@ public class BaseMqttClient implements MqttService {
             mqttClient.subscribe("Parking/IntegratorCVS", this::messageHandling);
             log.info("Подписка на топик Parking/IntegratorCVS произошла успешно.");
         } catch (Exception ex) {
-            log.error("Ошибка: " + ex);
+            log.error("getSubscribe Ошибка: " + ex);
         }
     }
 
@@ -150,7 +148,7 @@ public class BaseMqttClient implements MqttService {
 
             implementQueryProcedure(grz, camNumber);
         } catch (Exception ex) {
-            log.error("Ошибка: " + ex);
+            log.error("messageHandling Ошибка: " + ex);
         }
     }
 
@@ -164,17 +162,17 @@ public class BaseMqttClient implements MqttService {
                     " ID_CARD: " + grz +
                     " GRZ: " + grz
                     );
-
+            eventType = null; // Обновляем значение, чтобы не кэшировалось
             execute(grz, camNumber);
 
             publishResultProcedure(camNumber, eventType, grz);
         } catch (Exception ex) {
-            log.error("Ошибка: " + ex);
+            log.error("implementQueryProcedure Ошибка: " + ex);
         }
     }
 
     @Override
-    public void publishResultProcedure(int camNumber, String eventType, String grz) {
+    public void publishResultProcedure(int camNumber, String eventType, String grz) throws InterruptedException {
         try {
             ObjectMapper mapper = new ObjectMapper();
             Monitor monitor = new Monitor();
@@ -208,6 +206,7 @@ public class BaseMqttClient implements MqttService {
 
                     log.info("Сообщение: \"" + mqttMessageEventMonitor + "\" успешно отправлено. На топик Parking/MonitorDoor/Monitor/View");
                     log.info("Сообщение: \"" + mqttEventType + "\" успешно отправлено. На топик Parking/ResultEventType/");
+                    log.info("Сообщение: \"" + mqttGRZ + "\" успешно отправлено. На топик Parking/Validation/Result/NotAcceptGRZ");
                 }
                 case "50" -> {
                     mqttClient.publish("Parking/MonitorDoor/Monitor/View", mqttMessageEventMonitor);
@@ -226,15 +225,21 @@ public class BaseMqttClient implements MqttService {
             }
 
         } catch (Exception ex) {
-            log.error("Ошибка: " + ex.getMessage());
+            log.error("publishResultProcedure Ошибка: " + ex);
+            if(!mqttClient.isConnected()){
+                getConnection();
+            }
         }
     }
 
 
-    public void execute(String grz,int camNumber) {
+    public void execute(String grz,int camNumber) throws InterruptedException, SQLException {
         try {
-            eventType = null; // Обновляем значение, чтобы не кэшировалось
-            Connection connection = connectDatabase.connected();
+            Connection connection = DriverManager.getConnection(
+                    "jdbc:firebirdsql://localhost:3050/C:/Users/Sergey/Desktop/DB/TEST.FDB?encoding=WIN1251",
+                    "SYSDBA", "masterkey");
+
+//            connection = connectDatabase.connected();
 
             log.info("Название подключения к базе данных: " + connection.getMetaData());
 
@@ -258,10 +263,34 @@ public class BaseMqttClient implements MqttService {
 
             log.info("Получена информация из процедуры. " +
                     "EVENT_TYPE: " + eventType +
-                    "IP_PEP: " + idPep
+                    " IP_PEP: " + idPep
                     );
+
+            connection.close();
         } catch (Exception ex) {
-            log.error("Ошибка: " + ex);
+            log.error("execute Ошибка: " + ex);
+//            log.info("Переподключение... 5 сек");
+//            Thread.sleep(5000);
+//            if(connection.isClosed()) {
+////                connection = connectDatabase.connected();
+//                execute(grz, camNumber);
+            }
         }
+
+
+    @Override
+    public void startBackgroundMethods(){
+        new Thread(()->{ // проверка подключения к mqtt
+            while (true){
+                String str = "publish";
+                try {
+                    log.info("Подключение к mqtt: " +(
+                            mqttClient.isConnected()  ? "присутствует" : "отсутствует"));
+                    Thread.sleep(15000);
+                } catch (Exception e) {
+                    log.error("startBackgroundMethods Ошибка: " + e);
+                }
+            }
+        }).start();
     }
 }

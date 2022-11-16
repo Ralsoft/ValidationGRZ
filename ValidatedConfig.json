@@ -5,9 +5,9 @@
   "mqttClientIp" : "194.87.237.67",
   "mqttClientPort" : 1883,
   "databaseLogin" : "SYSDBA",
-  "databasePassword" : "temp",
-  "databasePath" : "C:\\\\ttt\\\\111.GDB",
-  "databaseIp" : "zet-buharov",
+  "databasePassword" : "masterkey",
+  "databasePath" : "C:\\\\Users\\\\Sergey\\\\Desktop\\\\DB\\\\TEST.FDB",
+  "databaseIp" : "localhost",
   "databasePort" : 3050,
   "cameraIdDeviceIdDictionary" : {
     "1" : 365
