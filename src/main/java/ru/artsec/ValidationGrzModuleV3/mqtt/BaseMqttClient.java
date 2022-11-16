@@ -236,10 +236,19 @@ public class BaseMqttClient implements MqttService {
     public void execute(String grz,int camNumber) throws InterruptedException, SQLException {
         try {
             Connection connection = DriverManager.getConnection(
-                    "jdbc:firebirdsql://localhost:3050/C:/Users/Sergey/Desktop/DB/TEST.FDB?encoding=WIN1251",
-                    "SYSDBA", "masterkey");
+                    "jdbc:firebirdsql://" + configurationModel.getDatabaseIp() + ":" +
+                    configurationModel.getDatabasePort() + "/" +
+                    configurationModel.getDatabasePath() + "?encoding=WIN1251",
+                    configurationModel.getDatabaseLogin(),
+                    configurationModel.getDatabasePassword()
+                    );
 
-//            connection = connectDatabase.connected();
+            log.info("Информация о подключении к базе данных. " +
+                    "LOGIN: " + configurationModel.getDatabaseLogin() + ", " +
+                    "PASSWORD: " + configurationModel.getDatabasePassword() + ", " +
+                    "IP: " + configurationModel.getDatabaseIp() + ", " +
+                    "PORT: " + configurationModel.getDatabasePort() + ", " +
+                    "ПУТЬ: " + configurationModel.getDatabasePath());
 
             log.info("Название подключения к базе данных: " + connection.getMetaData());
 
@@ -269,11 +278,6 @@ public class BaseMqttClient implements MqttService {
             connection.close();
         } catch (Exception ex) {
             log.error("execute Ошибка: " + ex);
-//            log.info("Переподключение... 5 сек");
-//            Thread.sleep(5000);
-//            if(connection.isClosed()) {
-////                connection = connectDatabase.connected();
-//                execute(grz, camNumber);
             }
         }
 
