@@ -32,7 +32,6 @@ import java.util.Map;
 public class BaseMqttClient implements MqttService {
     private final static Logger log = LoggerFactory.getLogger(BaseMqttClient.class);
     MqttClient mqttClient;
-    MqttConnectOptions options;
     File mqttConfig;
     ConfigurationModel configurationModel;
     ObjectMapper mapper = new ObjectMapper();
@@ -44,32 +43,41 @@ public class BaseMqttClient implements MqttService {
     }
 
     @Override
-    public void getConnection(String name) throws InterruptedException {
+    public void getConnection() throws InterruptedException {
         try {
             mqttConfig = new File("ValidatedConfig.json");
             isNewFile(mqttConfig);
             configurationModel = mapper.readValue(mqttConfig, ConfigurationModel.class);
 
-            log.info("Попытка подключения клиента. " + ", " +
-                    "URL = " + configurationModel.getMqttClientIp() + ":" + configurationModel.getMqttClientPort() + ", " +
-                    "ЛОГИН: " + configurationModel.getMqttUsername()
-            );
+            log.info(
+                    "Создание подключения клиента... HOST_NAME = " + configurationModel.getMqttClientIp() +
+                    ", PORT = " + configurationModel.getMqttClientPort() +
+                    ", USERNAME = " + configurationModel.getMqttUsername() +
+                    ", PASSWORD = " + configurationModel.getMqttPassword()
+                    );
 
             mqttClient = new MqttClient(
                     "tcp://" + configurationModel.getMqttClientIp() + ":" +
-                            configurationModel.getMqttClientPort(), InetAddress.getLocalHost() + "-Validation");
-            options = new MqttConnectOptions();
+                    configurationModel.getMqttClientPort(),
+                    InetAddress.getLocalHost() + "-Validation"
+                    );
+            MqttConnectOptions options = new MqttConnectOptions();
             options.setAutomaticReconnect(true);
             options.setUserName(configurationModel.getMqttUsername());
             options.setPassword(configurationModel.getMqttPassword().toCharArray());
+            log.info(
+                    "Выставленные настройки MQTT: " +
+                    "Автоматический реконнект = " + options.isAutomaticReconnect()
+                    );
             mqttClient.setCallback(new MqttCallback() {
                 @Override
                 public void connectionLost(Throwable throwable) {
-                    log.error("Соединение потеряно " + throwable.getMessage());
+                    log.error("Ошибка: " + throwable.getMessage());
                     if (!mqttClient.isConnected()) {
                         try {
+                            log.info("Переподключение... 60 сек");
                             Thread.sleep(60000);
-                            getConnection(MqttClient.generateClientId());
+                            getConnection();
                         } catch (InterruptedException e) {
                             throw new RuntimeException(e);
                         }
@@ -78,22 +86,23 @@ public class BaseMqttClient implements MqttService {
 
                 @Override
                 public void messageArrived(String s, MqttMessage mqttMessage) throws Exception {
-                    log.info("пришло сообщение " + s);
+                    log.info("Получено сообщение: " + s);
                 }
 
                 @Override
                 public void deliveryComplete(IMqttDeliveryToken iMqttDeliveryToken) {
-                    log.info("deliveryComplete " + iMqttDeliveryToken.toString());
+//                    log.info("deliveryComplete " + iMqttDeliveryToken.toString());
                 }
             });
             mqttClient.connect(options);
             getSubscribe();
-            log.info("Успешное поключение клиента - " + configurationModel.getMqttClientId());
+            log.info("Успешное поключение клиента - " + mqttClient.getServerURI());
         } catch (Exception e) {
             log.error("Ошибка: " + e);
             if (!mqttClient.isConnected()){
+                log.info("Переподключение... 5 сек");
                 Thread.sleep(5000);
-                getConnection(name);
+                getConnection();
             }
         }
     }
@@ -114,14 +123,14 @@ public class BaseMqttClient implements MqttService {
                 System.exit(0);
             }
         } catch (IOException e) {
-            log.error("Ошибка: " + e.getMessage());
+            log.error("Ошибка: " + e);
         }
     }
 
     @Override
     public void getSubscribe() {
         try {
-            log.info("Попытка подписки на топик. ТОПИК: Parking/IntegratorCVS");
+            log.info("Выполнение подписки на топик... ТОПИК: Parking/IntegratorCVS");
             mqttClient.subscribe("Parking/IntegratorCVS", this::messageHandling);
             log.info("Подписка на топик Parking/IntegratorCVS произошла успешно.");
         } catch (Exception ex) {
@@ -131,7 +140,7 @@ public class BaseMqttClient implements MqttService {
 
     private synchronized void messageHandling(String topic, MqttMessage message) {
         try{
-            log.info("Получено сообщение от топика. ТОПИК \"" + topic + "\" СООБЩЕНИЕ: \"" + message + "\"");
+            log.info("Получено сообщение! ТОПИК: " + topic + " СООБЩЕНИЕ: " + message);
 
             ObjectMapper mapper = new ObjectMapper();
             Map map = mapper.readValue(message.toString(), Map.class);
@@ -150,12 +159,11 @@ public class BaseMqttClient implements MqttService {
         try {
             var idDev = configurationModel.getCameraIdDeviceIdDictionary().get(camNumber);
 
-            log.info("Выполнение процедуры...");
             log.info("Входящие параметры для процедуры: " +
                     "ID_DEV: " + idDev +
-                    "ID_CARD: " + grz +
+                    " ID_CARD: " + grz +
                     " GRZ: " + grz
-            );
+                    );
 
             execute(grz, camNumber);
 
@@ -171,8 +179,6 @@ public class BaseMqttClient implements MqttService {
             ObjectMapper mapper = new ObjectMapper();
             Monitor monitor = new Monitor();
             Door door = new Door(camNumber);
-
-//            eventType = "47";
 
             var listMessagesBuffer = new ArrayList<Message>();
             listMessagesBuffer.add(new Message((byte) 0x00, (byte) 0x0, (byte) 0x02, grz));
@@ -227,6 +233,7 @@ public class BaseMqttClient implements MqttService {
 
     public void execute(String grz,int camNumber) {
         try {
+            eventType = null; // Обновляем значение, чтобы не кэшировалось
             Connection connection = connectDatabase.connected();
 
             log.info("Название подключения к базе данных: " + connection.getMetaData());
@@ -238,14 +245,21 @@ public class BaseMqttClient implements MqttService {
             call.setString(2, grz);
             call.setString(3, grz);
 
+            log.info("Выполнение процедуры... {call VALIDATEPASS("+camNumber+","+grz+","+grz+")}");
+
             call.executeQuery();
+
+            log.info("Успешное выполнение процедуры.");
 
             call.closeOnCompletion();
 
             eventType = call.getString(1);
             idPep = call.getString(2);
 
-            log.info("Соединение с базой данных: " + !connection.isClosed());
+            log.info("Получена информация из процедуры. " +
+                    "EVENT_TYPE: " + eventType +
+                    "IP_PEP: " + idPep
+                    );
         } catch (Exception ex) {
             log.error("Ошибка: " + ex);
         }

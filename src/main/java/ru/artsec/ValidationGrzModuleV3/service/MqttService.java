@@ -5,7 +5,7 @@ import org.eclipse.paho.client.mqttv3.MqttException;
 import java.sql.SQLException;
 
 public interface MqttService {
-    void getConnection(String name) throws InterruptedException;
+    void getConnection() throws InterruptedException;
 
     void getSubscribe() throws MqttException;
 
