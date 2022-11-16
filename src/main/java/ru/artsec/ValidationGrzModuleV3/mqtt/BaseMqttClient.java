@@ -17,6 +17,7 @@ import ru.artsec.ValidationGrzModuleV3.service.MqttService;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.sql.CallableStatement;
 import java.sql.Connection;
@@ -56,7 +57,7 @@ public class BaseMqttClient implements MqttService {
 
             mqttClient = new MqttClient(
                     "tcp://" + configurationModel.getMqttClientIp() + ":" +
-                            configurationModel.getMqttClientPort(), name);
+                            configurationModel.getMqttClientPort(), InetAddress.getLocalHost() + "-Validation");
             options = new MqttConnectOptions();
             options.setAutomaticReconnect(true);
             options.setUserName(configurationModel.getMqttUsername());
@@ -67,8 +68,8 @@ public class BaseMqttClient implements MqttService {
                     log.error("Соединение потеряно " + throwable.getMessage());
                     if (!mqttClient.isConnected()) {
                         try {
-                            Thread.sleep(5000);
-                            getConnection(name);
+                            Thread.sleep(60000);
+                            getConnection(MqttClient.generateClientId());
                         } catch (InterruptedException e) {
                             throw new RuntimeException(e);
                         }
@@ -169,18 +170,21 @@ public class BaseMqttClient implements MqttService {
         try {
             ObjectMapper mapper = new ObjectMapper();
             Monitor monitor = new Monitor();
-
             Door door = new Door(camNumber);
 
-            //логика соединения сообщений из файла конфигурации
-            monitor.setCamNumber(camNumber);
-            var listMessagesBuffer = new ArrayList<Message>();
-            var listMessages = configurationModel.getStringDictionary().get(eventType);
+//            eventType = "47";
 
-            listMessagesBuffer.addAll(listMessages);
+            var listMessagesBuffer = new ArrayList<Message>();
             listMessagesBuffer.add(new Message((byte) 0x00, (byte) 0x0, (byte) 0x02, grz));
 
-            monitor.setMessages(listMessagesBuffer);
+            var listMessages = configurationModel.getStringDictionary().get(eventType);
+
+            //логика соединения сообщений из файла конфигурации
+            if(listMessages != null) {
+                monitor.setCamNumber(camNumber);
+                monitor.setMessages(listMessagesBuffer);
+                listMessagesBuffer.addAll(listMessages);
+            }
 
             String jsonMonitor = mapper.writeValueAsString(monitor);
             String jsonDoor = mapper.writeValueAsString(door);
@@ -190,28 +194,31 @@ public class BaseMqttClient implements MqttService {
             MqttMessage mqttEventType = new MqttMessage(eventType.getBytes());
             MqttMessage mqttGRZ = new MqttMessage(grz.getBytes());
 
-            mqttClient.publish("Parking/MonitorDoor/Monitor/View", mqttMessageEventMonitor);
             switch (eventType) {
                 case "46", "65" -> {
+                    mqttClient.publish("Parking/MonitorDoor/Monitor/View", mqttMessageEventMonitor);
                     mqttClient.publish("Parking/Validation/Result/NotAcceptGRZ", mqttGRZ);
                     mqttClient.publish("Parking/Validation/Result/EventType", mqttEventType);
 
+                    log.info("Сообщение: \"" + mqttMessageEventMonitor + "\" успешно отправлено. На топик Parking/MonitorDoor/Monitor/View");
+                    log.info("Сообщение: \"" + mqttEventType + "\" успешно отправлено. На топик Parking/ResultEventType/");
                 }
                 case "50" -> {
+                    mqttClient.publish("Parking/MonitorDoor/Monitor/View", mqttMessageEventMonitor);
                     mqttClient.publish("Parking/Validation/Result/AcceptGRZ", mqttGRZ);
                     mqttClient.publish("Parking/MonitorDoor/Door/Open", mqttMessageEventDoor);
                     mqttClient.publish("Parking/Validation/Result/EventType", mqttEventType);
 
+                    log.info("Сообщение: \"" + mqttMessageEventMonitor + "\" успешно отправлено. На топик Parking/MonitorDoor/Monitor/View");
                     log.info("Сообщение: \"" + mqttGRZ + "\" успешно отправлено. Parking/Validation/Result/AcceptGRZ");
                     log.info("Сообщение: \"" + mqttMessageEventDoor + "\" успешно отправлено. На топик Parking/MonitorDoor/Door/Open");
+                    log.info("Сообщение: \"" + mqttEventType + "\" успешно отправлено. На топик Parking/ResultEventType/");
                 }
                 default -> {
                     log.warn("Неизвестный EVENT_TYPE = " + eventType);
                 }
             }
 
-            log.info("Сообщение: \"" + mqttMessageEventMonitor + "\" успешно отправлено. На топик Parking/MonitorDoor/Monitor/View");
-            log.info("Сообщение: \"" + mqttEventType + "\" успешно отправлено. На топик Parking/ResultEventType/");
         } catch (Exception ex) {
             log.error("Ошибка: " + ex.getMessage());
         }
@@ -238,7 +245,7 @@ public class BaseMqttClient implements MqttService {
             eventType = call.getString(1);
             idPep = call.getString(2);
 
-            System.out.println(!connection.isClosed());
+            log.info("Соединение с базой данных: " + !connection.isClosed());
         } catch (Exception ex) {
             log.error("Ошибка: " + ex);
         }
