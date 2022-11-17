@@ -7,10 +7,9 @@ import java.sql.SQLException;
 public interface MqttService {
     void getConnection() throws InterruptedException;
 
-    void getSubscribe() throws MqttException;
+//    void getSubscribe() throws MqttException;
 
-    void implementQueryProcedure(String mqttMessage, int camNumber) throws InterruptedException, SQLException;
+//    void implementQueryProcedure(String mqttMessage, int camNumber) throws InterruptedException, SQLException;
 
-    void publishResultProcedure(int camNumber, String eventType, String grz) throws InterruptedException;
-    void startBackgroundMethods();
+//    void publishResultProcedure(int camNumber, String eventType, String grz) throws InterruptedException;
 }
