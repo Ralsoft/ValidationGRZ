@@ -22,7 +22,7 @@ public class ConnectionDatabase {
     }
 
 
-    public Connection connected() throws InterruptedException {
+    public Connection connected() {
         log.info("Подключение к базе данных... Попытка: " + ++count);
 
         try {
@@ -48,10 +48,7 @@ public class ConnectionDatabase {
 
             return connectionDB;
         } catch (Exception ex) {
-            log.error("Ошибка: " + ex.getMessage());
-            log.info("Переподключение... 5 сек");
-            Thread.sleep(5000);
-            connected();
+            log.error("Ошибка: " + ex);
         }
         return null;
     }
